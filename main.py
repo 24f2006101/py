@@ -77,7 +77,13 @@ async def answer(request: Request):
         ]
 
     # 2. Region filter
-    for region in ["north", "south", "east", "west"]:
+    regions = sorted({
+        order.get("region", "").lower()
+        for order in ORDERS
+        if order.get("region")
+    })
+
+    for region in regions:
         if region in q:
             rows = [
                 order for order in rows
@@ -85,7 +91,7 @@ async def answer(request: Request):
             ]
             break
 
-    # 3. Product filter: use only real product names from the data
+    # 3. Product filter: only real product names
     products = sorted({
         order.get("product", "")
         for order in ORDERS
@@ -105,37 +111,55 @@ async def answer(request: Request):
             if order.get("product") == matched_product
         ]
 
-       # 4. Refund questions
+    # 4. Refund questions
     if "refund" in q:
         refund_rows = [
             order for order in rows
             if order.get("status", "").lower() == "refunded"
         ]
 
-        # Count questions
         count_phrases = [
             "how many orders",
             "number of orders",
             "how many refunds",
             "number of refunds",
             "how many were refunded",
-            "how many orders from",
         ]
 
         if any(phrase in q for phrase in count_phrases):
             return {"answer": len(refund_rows)}
 
-        # Otherwise, assume refund revenue in USD
         total = sum(to_usd(order) for order in refund_rows)
         return {"answer": round(total, 2)}
 
-    # 5. Paid orders only for all remaining questions
+    # 5. Paid orders only
     rows = [
         order for order in rows
         if order.get("status") == "paid"
     ]
 
-    # 6. Top product by revenue
+    # 6. Customer-count questions
+    customer_count_phrases = [
+        "how many different customers",
+        "how many distinct customers",
+        "how many unique customers",
+        "how many customers",
+        "different customers",
+        "distinct customers",
+        "unique customers",
+        "number of customers",
+    ]
+
+    if any(phrase in q for phrase in customer_count_phrases):
+        customers = {
+            order.get("customer")
+            for order in rows
+            if order.get("customer")
+        }
+
+        return {"answer": len(customers)}
+
+    # 7. Top product by revenue
     top_product_phrases = [
         "which product earned the most",
         "which product had the highest revenue",
@@ -154,35 +178,8 @@ async def answer(request: Request):
         if not totals:
             return {"answer": ""}
 
-        top_product = max(totals, key=totals.get)
-        return {"answer": top_product}
+        return {"answer": max(totals, key=totals.get)}
 
-        # 7. Customer-count questions
-    customer_count_phrases = [
-        "how many different customers",
-        "how many distinct customers",
-        "how many unique customers",
-        "how many customers",
-        "different customers",
-        "distinct customers",
-        "unique customers",
-        "number of customers",
-    ]
-
-    if any(phrase in q for phrase in customer_count_phrases):
-        customers = set()
-
-        for order in rows:
-            customer = (
-                order.get("customer_id")
-                or order.get("customer")
-                or order.get("customer_name")
-            )
-
-            if customer:
-                customers.add(customer)
-
-        return {"answer": len(customers)}
     # 8. Average paid order value
     if "average" in q or "on average" in q or "mean" in q:
         if not rows:
