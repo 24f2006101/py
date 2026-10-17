@@ -105,13 +105,27 @@ async def answer(request: Request):
             if order.get("product") == matched_product
         ]
 
-    # 4. Refund questions
+       # 4. Refund questions
     if "refund" in q:
         refund_rows = [
             order for order in rows
             if order.get("status", "").lower() == "refunded"
         ]
 
+        # Count questions
+        count_phrases = [
+            "how many orders",
+            "number of orders",
+            "how many refunds",
+            "number of refunds",
+            "how many were refunded",
+            "how many orders from",
+        ]
+
+        if any(phrase in q for phrase in count_phrases):
+            return {"answer": len(refund_rows)}
+
+        # Otherwise, assume refund revenue in USD
         total = sum(to_usd(order) for order in refund_rows)
         return {"answer": round(total, 2)}
 
