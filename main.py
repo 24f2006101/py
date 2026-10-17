@@ -100,6 +100,24 @@ async def answer(request: Request):
 
     # Paid orders only for customer/revenue questions
     rows = [r for r in rows if r.get("status") == "paid"]
+     # Top-selling product by revenue
+    if "top-selling product" in q or "top selling product" in q or "best-selling product" in q:
+        revenue_by_product = {}
+
+        for r in rows:
+            product = r.get("product")
+            if not product:
+                continue
+
+            revenue_by_product[product] = (
+                revenue_by_product.get(product, 0) + to_usd(r)
+            )
+
+        if not revenue_by_product:
+            return {"answer": ""}
+
+        top_product = max(revenue_by_product, key=revenue_by_product.get)
+        return {"answer": top_product}
 
     # Distinct customer count
     if "distinct customer" in q or "how many customers" in q or "unique customers" in q:
