@@ -69,16 +69,26 @@ async def answer(request: Request):
             break
 
     # Refund or revenue
+     # Refund or revenue
     if "refund" in q:
         rows = [
             r for r in rows
             if r.get("status", "").lower() == "refunded"
         ]
-    else:
-        rows = [
-            r for r in rows
-            if r.get("status") == "paid"
-        ]
+        total = sum(to_usd(r) for r in rows)
+        return {"answer": round(total, 2)}
+
+    # Keep only paid orders for revenue-type questions
+    rows = [r for r in rows if r.get("status") == "paid"]
 
     total = sum(to_usd(r) for r in rows)
+    count = len(rows)
+
+    # Average question
+    if "average" in q or "on average" in q or "mean" in q:
+        if count == 0:
+            return {"answer": 0}
+        return {"answer": round(total / count, 2)}
+
+    # Normal total revenue question
     return {"answer": round(total, 2)}
