@@ -68,8 +68,19 @@ async def answer(request: Request):
             ]
             break
 
-    # Refund or revenue
-     # Refund or revenue
+    # Filter by product name.
+    # This finds a capitalized product name in the original question.
+    product_match = re.search(
+        r"\b([A-Z][A-Za-z0-9&\- ]+)\b", question
+    )
+    if product_match:
+        product_name = product_match.group(1).strip()
+        rows = [
+            r for r in rows
+            if r.get("product", "") == product_name
+        ]
+
+    # Refund questions
     if "refund" in q:
         rows = [
             r for r in rows
@@ -78,17 +89,31 @@ async def answer(request: Request):
         total = sum(to_usd(r) for r in rows)
         return {"answer": round(total, 2)}
 
-    # Keep only paid orders for revenue-type questions
+    # Paid orders only for customer/revenue questions
     rows = [r for r in rows if r.get("status") == "paid"]
 
-    total = sum(to_usd(r) for r in rows)
-    count = len(rows)
+    # Distinct customer count
+    if "distinct customer" in q or "how many customers" in q or "unique customers" in q:
+        customers = set()
 
-    # Average question
+        for r in rows:
+            customer = r.get("customer_id") or r.get("customer") or r.get("customer_name")
+            if customer:
+                customers.add(customer)
+
+        return {"answer": len(customers)}
+
+    # Average order value
     if "average" in q or "on average" in q or "mean" in q:
-        if count == 0:
+        if not rows:
             return {"answer": 0}
-        return {"answer": round(total / count, 2)}
+        total = sum(to_usd(r) for r in rows)
+        return {"answer": round(total / len(rows), 2)}
 
-    # Normal total revenue question
+    # Number of orders
+    if "how many orders" in q or "number of orders" in q:
+        return {"answer": len(rows)}
+
+    # Default: total revenue in USD
+    total = sum(to_usd(r) for r in rows)
     return {"answer": round(total, 2)}
