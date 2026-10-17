@@ -19,6 +19,7 @@ MONTHS = {
     "september": 9, "october": 10, "november": 11, "december": 12,
 }
 
+
 def parse_month(question):
     q = question.lower()
 
@@ -30,18 +31,33 @@ def parse_month(question):
 
     return None, None
 
+
 def get_date(order):
-    # Change "created_at" if your order uses another date field
     return datetime.fromisoformat(order["created_at"]).astimezone(IST)
 
+
 def to_usd(order):
-    amount = float(order["amount"])  # change if your money field differs
+    amount = float(order["amount"])
     currency = order["currency"]
 
     if currency == "USD":
         return amount
 
     return amount * RATES[currency]
+
+
+def revenue_by_product(rows):
+    totals = {}
+
+    for order in rows:
+        product = order.get("product")
+        if not product:
+            continue
+
+        totals[product] = totals.get(product, 0) + to_usd(order)
+
+    return totals
+
 
 @app.post("/")
 async def answer(request: Request):
@@ -52,33 +68,32 @@ async def answer(request: Request):
     year, month = parse_month(q)
     rows = ORDERS
 
-    # Filter by month
+    # 1. Month filter
     if year and month:
         rows = [
-            r for r in rows
-            if get_date(r).year == year and get_date(r).month == month
+            order for order in rows
+            if get_date(order).year == year
+            and get_date(order).month == month
         ]
 
-    # Filter by region
+    # 2. Region filter
     for region in ["north", "south", "east", "west"]:
         if region in q:
             rows = [
-                r for r in rows
-                if r.get("region", "").lower() == region
+                order for order in rows
+                if order.get("region", "").lower() == region
             ]
             break
 
-    # Filter by product name.
-    # This finds a capitalized product name in the original question.
-       # Build the list of real product names from your data
+    # 3. Product filter: use only real product names from the data
     products = sorted({
-        r.get("product", "")
-        for r in ORDERS
-        if r.get("product")
+        order.get("product", "")
+        for order in ORDERS
+        if order.get("product")
     })
 
-    # Filter by a real product name only
     matched_product = None
+
     for product in products:
         if product.lower() in q:
             matched_product = product
@@ -86,61 +101,83 @@ async def answer(request: Request):
 
     if matched_product:
         rows = [
-            r for r in rows
-            if r.get("product") == matched_product
+            order for order in rows
+            if order.get("product") == matched_product
         ]
-    # Refund questions
+
+    # 4. Refund questions
     if "refund" in q:
-        rows = [
-            r for r in rows
-            if r.get("status", "").lower() == "refunded"
+        refund_rows = [
+            order for order in rows
+            if order.get("status", "").lower() == "refunded"
         ]
-        total = sum(to_usd(r) for r in rows)
+
+        total = sum(to_usd(order) for order in refund_rows)
         return {"answer": round(total, 2)}
 
-    # Paid orders only for customer/revenue questions
-    rows = [r for r in rows if r.get("status") == "paid"]
-     # Top-selling product by revenue
-    if "top-selling product" in q or "top selling product" in q or "best-selling product" in q:
-        revenue_by_product = {}
+    # 5. Paid orders only for all remaining questions
+    rows = [
+        order for order in rows
+        if order.get("status") == "paid"
+    ]
 
-        for r in rows:
-            product = r.get("product")
-            if not product:
-                continue
+    # 6. Top product by revenue
+    top_product_phrases = [
+        "which product earned the most",
+        "which product had the highest revenue",
+        "which product generated the most revenue",
+        "top-selling product",
+        "top selling product",
+        "best-selling product",
+        "best selling product",
+        "highest revenue product",
+        "most revenue product",
+    ]
 
-            revenue_by_product[product] = (
-                revenue_by_product.get(product, 0) + to_usd(r)
-            )
+    if any(phrase in q for phrase in top_product_phrases):
+        totals = revenue_by_product(rows)
 
-        if not revenue_by_product:
+        if not totals:
             return {"answer": ""}
 
-        top_product = max(revenue_by_product, key=revenue_by_product.get)
+        top_product = max(totals, key=totals.get)
         return {"answer": top_product}
 
-    # Distinct customer count
-    if "distinct customer" in q or "how many customers" in q or "unique customers" in q:
+    # 7. Distinct customer count
+    customer_phrases = [
+        "distinct customer",
+        "unique customer",
+        "how many customers",
+        "number of customers",
+    ]
+
+    if any(phrase in q for phrase in customer_phrases):
         customers = set()
 
-        for r in rows:
-            customer = r.get("customer_id") or r.get("customer") or r.get("customer_name")
+        for order in rows:
+            customer = (
+                order.get("customer_id")
+                or order.get("customer")
+                or order.get("customer_name")
+            )
+
             if customer:
                 customers.add(customer)
 
         return {"answer": len(customers)}
 
-    # Average order value
+    # 8. Average paid order value
     if "average" in q or "on average" in q or "mean" in q:
         if not rows:
             return {"answer": 0}
-        total = sum(to_usd(r) for r in rows)
+
+        total = sum(to_usd(order) for order in rows)
         return {"answer": round(total / len(rows), 2)}
 
-    # Number of orders
+    # 9. Number of orders
     if "how many orders" in q or "number of orders" in q:
         return {"answer": len(rows)}
 
-    # Default: total revenue in USD
-    total = sum(to_usd(r) for r in rows)
+    # 10. Default: total revenue in USD
+    total = sum(to_usd(order) for order in rows)
     return {"answer": round(total, 2)}
