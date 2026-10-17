@@ -70,16 +70,25 @@ async def answer(request: Request):
 
     # Filter by product name.
     # This finds a capitalized product name in the original question.
-    product_match = re.search(
-        r"\b([A-Z][A-Za-z0-9&\- ]+)\b", question
-    )
-    if product_match:
-        product_name = product_match.group(1).strip()
+       # Build the list of real product names from your data
+    products = sorted({
+        r.get("product", "")
+        for r in ORDERS
+        if r.get("product")
+    })
+
+    # Filter by a real product name only
+    matched_product = None
+    for product in products:
+        if product.lower() in q:
+            matched_product = product
+            break
+
+    if matched_product:
         rows = [
             r for r in rows
-            if r.get("product", "") == product_name
+            if r.get("product") == matched_product
         ]
-
     # Refund questions
     if "refund" in q:
         rows = [
