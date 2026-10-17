@@ -143,15 +143,19 @@ async def answer(request: Request):
         top_product = max(totals, key=totals.get)
         return {"answer": top_product}
 
-    # 7. Distinct customer count
-    customer_phrases = [
-        "distinct customer",
-        "unique customer",
+        # 7. Customer-count questions
+    customer_count_phrases = [
+        "how many different customers",
+        "how many distinct customers",
+        "how many unique customers",
         "how many customers",
+        "different customers",
+        "distinct customers",
+        "unique customers",
         "number of customers",
     ]
 
-    if any(phrase in q for phrase in customer_phrases):
+    if any(phrase in q for phrase in customer_count_phrases):
         customers = set()
 
         for order in rows:
@@ -165,7 +169,6 @@ async def answer(request: Request):
                 customers.add(customer)
 
         return {"answer": len(customers)}
-
     # 8. Average paid order value
     if "average" in q or "on average" in q or "mean" in q:
         if not rows:
